@@ -1,0 +1,9 @@
+{
+  "name": "wa-bot-geofisika-deliserdang",
+  "version": "1.0.0",
+  "main": "api/webhook.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0"
+  }
+}
