@@ -29,63 +29,73 @@ module.exports = async (req, res) => {
   const fonnteToken = process.env.FONNTE_TOKEN || 'tQTBfHSeQoXKNwKSejPJ';
 
   try {
-    // 1. Simpan log pesan masuk
+    // 1. Simpan Log Pesan Masuk
     if (supabase) {
       await supabase.from('chat_logs').insert([
         { phone: sender, message: message, direction: 'incoming' }
       ]);
     }
 
-    // 2. Cek status Live Chat user
+    // 2. Cek Status Live Chat secara Aman
     let isLiveChat = false;
     if (supabase) {
-      const { data: user } = await supabase
-        .from('users')
-        .select('is_live_chat')
-        .eq('phone', sender)
-        .single();
-      
-      if (user && user.is_live_chat) {
-        isLiveChat = true;
+      try {
+        const { data: user } = await supabase
+          .from('users')
+          .select('is_live_chat')
+          .eq('phone', sender)
+          .maybeSingle();
+
+        if (user && user.is_live_chat === true) {
+          isLiveChat = true;
+        }
+      } catch (err) {
+        console.error('Error reading user state:', err);
       }
     }
 
-    // 3. Sesi reset dari Admin ke Bot
+    // 3. Reset dari Live Chat ke Bot (Keyword: BOT / STOP / BATAL)
     if (text === 'BOT' || text === 'STOP' || text === 'BATAL') {
       if (supabase) {
-        await supabase.from('users').upsert({ phone: sender, is_live_chat: false });
+        await supabase.from('users').upsert(
+          { phone: sender, is_live_chat: false },
+          { onConflict: 'phone' }
+        );
       }
-      
-      const resetMsg = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nSesi layanan interaktif dengan petugas telah diakhiri.\nLayanan otomatis (bot) kini aktif kembali.\n\nKetik *MENU* untuk melihat daftar layanan.`;
-      
+
+      const resetMsg = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nSesi obrolan langsung dengan petugas telah diakhiri.\nLayanan bot otomatis kini aktif kembali.\n\nKetik *MENU* untuk melihat daftar layanan.`;
+
       await axios.post('https://api.fonnte.com/send', { target: sender, message: resetMsg }, { headers: { Authorization: fonnteToken } });
       return res.status(200).send('SUCCESS');
     }
 
-    // 4. Jika sedang dalam mode Live Chat, serahkan balasan ke Admin
+    // 4. Jika User sedang Mode Live Chat, BOT HENTIKAN BALASAN OTOMATIS
     if (isLiveChat) {
       return res.status(200).send('LIVE_CHAT_ACTIVE');
     }
 
-    // 5. Mode Hubungi Admin
+    // 5. Aktifkan Mode Live Chat Admin (Keyword: ADMIN / 4)
     if (text === 'ADMIN' || text === '4') {
       if (supabase) {
-        await supabase.from('users').upsert({ phone: sender, is_live_chat: true });
+        await supabase.from('users').upsert(
+          { phone: sender, is_live_chat: true },
+          { onConflict: 'phone' }
+        );
       }
 
-      const userReply = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nAnda terhubung dengan *Layanan Petugas Piket Operasional*.\n\nSilakan tuliskan pertanyaan, permohonan, atau kendala Anda. Petugas kami akan membalas pesan Anda secara langsung.\n\n--- \n_Ketik *BOT* kapan saja untuk kembali ke menu otomatis._`;
-      
+      const userReply = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nAnda terhubung dengan *Layanan Petugas Piket Operasional*.\n\nSilakan tuliskan pertanyaan atau kendala Anda di sini. Petugas kami akan membalas pesan Anda secara langsung dari nomor ini.\n\n--- \n_Ketik *BOT* kapan saja jika ingin kembali ke menu otomatis._`;
+
       await axios.post('https://api.fonnte.com/send', { target: sender, message: userReply }, { headers: { Authorization: fonnteToken } });
       return res.status(200).send('SUCCESS');
     }
 
-    // 6. Logika Menu Utama & Sub-Menu
+    // 6. Logika Menu Otomatis Standar
     let replyMessage = '';
     const header = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\n`;
     const footer = `\n\n========================================\nWebsite: stageof-deliserdang.bmkg.go.id\nEmail: stageof.deliserdang@bmkg.go.id`;
 
     if (text === 'MENU' || text === 'HALO' || text === 'HI' || text === 'START') {
-      replyMessage = header + 
+      replyMessage = header +
         `Selamat datang di Layanan Informasi Resmi Stasiun Geofisika Kelas I Deli Serdang.\n\n` +
         `Silakan balas dengan angka pilihan menu:\n\n` +
         `*1* - Informasi Gempabumi Terkini\n` +
@@ -97,10 +107,10 @@ module.exports = async (req, res) => {
     } else if (text === '1') {
       const bmkgRes = await axios.get('https://data.bmkg.go.id/DataMKG/TEWS/autogempa.json');
       const g = bmkgRes.data.Infogempa.gempa;
-      
+
       replyMessage = header +
         `*INFORMASI GEMPABUMI TERKINI*\n\n` +
-        `• *Waktu*: ${g.Tanggal} | ${g.Jam} WIB\n` +
+        `• *Waktu*: ${g.Tanggal} \vert{}${g.Jam} WIB\n` +
         `• *Magnitudo*: ${g.Magnitude}\n` +
         `• *Kedalaman*: ${g.Kedalaman}\n` +
         `• *Lokasi*: ${g.Wilayah}\n` +
@@ -157,21 +167,4 @@ module.exports = async (req, res) => {
     } else {
       replyMessage = header +
         `Pesan tidak dikenali.\n\n` +
-        `Silakan ketik *MENU* untuk melihat pilihan layanan atau ketik *ADMIN* untuk terhubung dengan petugas piket.` + footer;
-    }
-
-    // Kirim Balasan Bot
-    await axios.post('https://api.fonnte.com/send', { target: sender, message: replyMessage }, { headers: { Authorization: fonnteToken } });
-
-    if (supabase) {
-      await supabase.from('chat_logs').insert([
-        { phone: sender, message: replyMessage, direction: 'outgoing' }
-      ]);
-    }
-
-    return res.status(200).send('SUCCESS');
-  } catch (err) {
-    console.error('Error handling webhook:', err);
-    return res.status(500).send('INTERNAL ERROR');
-  }
-};
+        `Silakan ketik *MENU* untuk melihat pilihan layanan atau ketik
