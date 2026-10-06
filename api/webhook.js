@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
       ]);
     }
 
-    // 2. Cek Status Live Chat secara Aman
+    // 2. Cek Status Live Chat User
     let isLiveChat = false;
     if (supabase) {
       try {
@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
       return res.status(200).send('SUCCESS');
     }
 
-    // 4. Jika User sedang Mode Live Chat, BOT HENTIKAN BALASAN OTOMATIS
+    // 4. Jika User dalam Mode Live Chat, Hentikan Balasan Bot
     if (isLiveChat) {
       return res.status(200).send('LIVE_CHAT_ACTIVE');
     }
@@ -110,7 +110,7 @@ module.exports = async (req, res) => {
 
       replyMessage = header +
         `*INFORMASI GEMPABUMI TERKINI*\n\n` +
-        `• *Waktu*: ${g.Tanggal} \vert{}${g.Jam} WIB\n` +
+        `• *Waktu*: ${g.Tanggal} | ${g.Jam} WIB\n` +
         `• *Magnitudo*: ${g.Magnitude}\n` +
         `• *Kedalaman*: ${g.Kedalaman}\n` +
         `• *Lokasi*: ${g.Wilayah}\n` +
@@ -162,4 +162,26 @@ module.exports = async (req, res) => {
         `2. Pengamatan Sambaran Petir (Lightning Detector)\n` +
         `3. Pengamatan Magnet Bumi (Magnetometer)\n` +
         `4. Pengamatan Hilal & Tanda Waktu\n\n` +
-        `_Ketik *MENU
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
+
+    } else {
+      replyMessage = header +
+        `Pesan tidak dikenali.\n\n` +
+        `Silakan ketik *MENU* untuk melihat pilihan layanan atau ketik *ADMIN* untuk terhubung dengan petugas piket.` + footer;
+    }
+
+    // Kirim Balasan Bot
+    await axios.post('https://api.fonnte.com/send', { target: sender, message: replyMessage }, { headers: { Authorization: fonnteToken } });
+
+    if (supabase) {
+      await supabase.from('chat_logs').insert([
+        { phone: sender, message: replyMessage, direction: 'outgoing' }
+      ]);
+    }
+
+    return res.status(200).send('SUCCESS');
+  } catch (err) {
+    console.error('Error handling webhook:', err);
+    return res.status(500).send('INTERNAL ERROR');
+  }
+};
