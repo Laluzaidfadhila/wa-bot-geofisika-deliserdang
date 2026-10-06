@@ -162,9 +162,4 @@ module.exports = async (req, res) => {
         `2. Pengamatan Sambaran Petir (Lightning Detector)\n` +
         `3. Pengamatan Magnet Bumi (Magnetometer)\n` +
         `4. Pengamatan Hilal & Tanda Waktu\n\n` +
-        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
-
-    } else {
-      replyMessage = header +
-        `Pesan tidak dikenali.\n\n` +
-        `Silakan ketik *MENU* untuk melihat pilihan layanan atau ketik
+        `_Ketik *MENU
