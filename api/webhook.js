@@ -1,10 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// Inisialisasi Supabase dengan fallback URL langsung jika Env Var belum terbaca
+const supabaseUrl = process.env.SUPABASE_URL || 'https://zvxvrnowcocwuhfzbmmy.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 module.exports = async (req, res) => {
   // Hanya menerima metode POST
@@ -12,25 +13,25 @@ module.exports = async (req, res) => {
     return res.status(200).json({ message: 'Webhook endpoint active' });
   }
 
-  // Ambil parameter dari Fonnte (bisa berupa sender atau from)
+  // Menangani variasi parameter pengirim pesan dari Fonnte
   const sender = req.body.sender || req.body.from;
   const message = req.body.message;
 
   if (!sender || !message) {
-    return res.status(200).send('No message payload');
+    return res.status(200).send('No message payload received');
   }
 
   const text = message.trim().toUpperCase();
 
   try {
-    // 1. Simpan pesan masuk ke Supabase
+    // 1. Simpan pesan masuk (incoming) ke Supabase
     await supabase.from('chat_logs').insert([
       { phone: sender, message: message, direction: 'incoming' }
     ]);
 
     let replyMessage = '';
 
-    // 2. Logika Menu
+    // 2. Logika Pilihan Menu / Keyword
     if (text === 'MENU' || text === 'HALO' || text === 'HI') {
       replyMessage = `Selamat datang di Layanan Informasi Stasiun Geofisika Kelas I Deli Serdang.\n\nSilakan pilih menu:\n1. Informasi Gempa Terkini\n2. Informasi Pelayanan Publik\n3. Bantuan / Layanan Pengaduan`;
     } else if (text === '1') {
@@ -39,11 +40,13 @@ module.exports = async (req, res) => {
       replyMessage = `*INFORMASI GEMPA TERKINI (BMKG)*\n\nTanggal: ${gempa.Tanggal}\nJam: ${gempa.Jam}\nMagnitudo: ${gempa.Magnitude}\nKedalaman: ${gempa.Kedalaman}\nWilayah: ${gempa.Wilayah}\nPotensi: ${gempa.Potensi}`;
     } else if (text === '2') {
       replyMessage = `*LAYANAN INFORMASI GEOFISIKA*\n\n1. Permohonan Data Petir & Gempa\n2. Kunjungan Edukasi\n\nSilakan hubungi staf kami pada jam kerja operasional.`;
+    } else if (text === '3') {
+      replyMessage = `*LAYANAN PENGADUAN*\n\nUntuk pengaduan atau konsultasi lebih lanjut, silakan sampaikan keluhan Anda secara langsung melalui pesan ini. Staf kami akan merespons secepatnya.`;
     } else {
       replyMessage = `Ketik *MENU* untuk melihat daftar layanan resmi Stasiun Geofisika Deli Serdang.`;
     }
 
-    // 3. Kirim Balasan via Fonnte
+    // 3. Kirim pesan balasan via Fonnte API
     await axios.post(
       'https://api.fonnte.com/send',
       {
@@ -57,7 +60,7 @@ module.exports = async (req, res) => {
       }
     );
 
-    // 4. Simpan pesan keluar ke Supabase
+    // 4. Simpan pesan keluar (outgoing) ke Supabase
     await supabase.from('chat_logs').insert([
       { phone: sender, message: replyMessage, direction: 'outgoing' }
     ]);
