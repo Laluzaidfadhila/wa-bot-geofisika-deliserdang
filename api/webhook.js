@@ -7,24 +7,30 @@ const supabase = createClient(
 );
 
 module.exports = async (req, res) => {
+  // Hanya menerima metode POST
   if (req.method !== 'POST') {
     return res.status(200).json({ message: 'Webhook endpoint active' });
   }
 
-  const { sender, message } = req.body;
+  // Ambil parameter dari Fonnte (bisa berupa sender atau from)
+  const sender = req.body.sender || req.body.from;
+  const message = req.body.message;
+
   if (!sender || !message) {
-    return res.status(200).send('OK');
+    return res.status(200).send('No message payload');
   }
 
   const text = message.trim().toUpperCase();
 
   try {
+    // 1. Simpan pesan masuk ke Supabase
     await supabase.from('chat_logs').insert([
       { phone: sender, message: message, direction: 'incoming' }
     ]);
 
     let replyMessage = '';
 
+    // 2. Logika Menu
     if (text === 'MENU' || text === 'HALO' || text === 'HI') {
       replyMessage = `Selamat datang di Layanan Informasi Stasiun Geofisika Kelas I Deli Serdang.\n\nSilakan pilih menu:\n1. Informasi Gempa Terkini\n2. Informasi Pelayanan Publik\n3. Bantuan / Layanan Pengaduan`;
     } else if (text === '1') {
@@ -37,6 +43,7 @@ module.exports = async (req, res) => {
       replyMessage = `Ketik *MENU* untuk melihat daftar layanan resmi Stasiun Geofisika Deli Serdang.`;
     }
 
+    // 3. Kirim Balasan via Fonnte
     await axios.post(
       'https://api.fonnte.com/send',
       {
@@ -50,6 +57,7 @@ module.exports = async (req, res) => {
       }
     );
 
+    // 4. Simpan pesan keluar ke Supabase
     await supabase.from('chat_logs').insert([
       { phone: sender, message: replyMessage, direction: 'outgoing' }
     ]);
