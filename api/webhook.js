@@ -1,19 +1,24 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 
-// Inisialisasi Supabase dengan fallback URL langsung jika Env Var belum terbaca
-const supabaseUrl = process.env.SUPABASE_URL || 'https://zvxvrnowcocwuhfzbmmy.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 module.exports = async (req, res) => {
-  // Hanya menerima metode POST
+  // 1. Inisialisasi Supabase di dalam handler dengan hardcoded fallback URL
+  const supabaseUrl = process.env.SUPABASE_URL || 'https://zvxvrnowcocwuhfzbmmy.supabase.co';
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  let supabase;
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  } catch (err) {
+    console.error('Supabase init error:', err);
+  }
+
+  // 2. Hanya terima metode POST
   if (req.method !== 'POST') {
     return res.status(200).json({ message: 'Webhook endpoint active' });
   }
 
-  // Menangani variasi parameter pengirim pesan dari Fonnte
+  // 3. Menangani parameter pengirim pesan dari Fonnte
   const sender = req.body.sender || req.body.from;
   const message = req.body.message;
 
@@ -24,14 +29,16 @@ module.exports = async (req, res) => {
   const text = message.trim().toUpperCase();
 
   try {
-    // 1. Simpan pesan masuk (incoming) ke Supabase
-    await supabase.from('chat_logs').insert([
-      { phone: sender, message: message, direction: 'incoming' }
-    ]);
+    // Log pesan masuk ke Supabase
+    if (supabase) {
+      await supabase.from('chat_logs').insert([
+        { phone: sender, message: message, direction: 'incoming' }
+      ]);
+    }
 
     let replyMessage = '';
 
-    // 2. Logika Pilihan Menu / Keyword
+    // Logika Menu / Keyword
     if (text === 'MENU' || text === 'HALO' || text === 'HI') {
       replyMessage = `Selamat datang di Layanan Informasi Stasiun Geofisika Kelas I Deli Serdang.\n\nSilakan pilih menu:\n1. Informasi Gempa Terkini\n2. Informasi Pelayanan Publik\n3. Bantuan / Layanan Pengaduan`;
     } else if (text === '1') {
@@ -46,7 +53,7 @@ module.exports = async (req, res) => {
       replyMessage = `Ketik *MENU* untuk melihat daftar layanan resmi Stasiun Geofisika Deli Serdang.`;
     }
 
-    // 3. Kirim pesan balasan via Fonnte API
+    // Kirim balasan via Fonnte
     await axios.post(
       'https://api.fonnte.com/send',
       {
@@ -55,15 +62,17 @@ module.exports = async (req, res) => {
       },
       {
         headers: {
-          Authorization: process.env.FONNTE_TOKEN
+          Authorization: process.env.FONNTE_TOKEN || 'tQTBfHSeQoXKNwKSejPJ'
         }
       }
     );
 
-    // 4. Simpan pesan keluar (outgoing) ke Supabase
-    await supabase.from('chat_logs').insert([
-      { phone: sender, message: replyMessage, direction: 'outgoing' }
-    ]);
+    // Log pesan keluar ke Supabase
+    if (supabase) {
+      await supabase.from('chat_logs').insert([
+        { phone: sender, message: replyMessage, direction: 'outgoing' }
+      ]);
+    }
 
     return res.status(200).send('SUCCESS');
   } catch (err) {
