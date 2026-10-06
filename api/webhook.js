@@ -26,129 +26,143 @@ module.exports = async (req, res) => {
   }
 
   const text = message.trim().toUpperCase();
+  const fonnteToken = process.env.FONNTE_TOKEN || 'tQTBfHSeQoXKNwKSejPJ';
 
   try {
-    // Log pesan masuk
+    // 1. Simpan log pesan masuk
     if (supabase) {
       await supabase.from('chat_logs').insert([
         { phone: sender, message: message, direction: 'incoming' }
       ]);
     }
 
+    // 2. Cek status Live Chat user
+    let isLiveChat = false;
+    if (supabase) {
+      const { data: user } = await supabase
+        .from('users')
+        .select('is_live_chat')
+        .eq('phone', sender)
+        .single();
+      
+      if (user && user.is_live_chat) {
+        isLiveChat = true;
+      }
+    }
+
+    // 3. Sesi reset dari Admin ke Bot
+    if (text === 'BOT' || text === 'STOP' || text === 'BATAL') {
+      if (supabase) {
+        await supabase.from('users').upsert({ phone: sender, is_live_chat: false });
+      }
+      
+      const resetMsg = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nSesi layanan interaktif dengan petugas telah diakhiri.\nLayanan otomatis (bot) kini aktif kembali.\n\nKetik *MENU* untuk melihat daftar layanan.`;
+      
+      await axios.post('https://api.fonnte.com/send', { target: sender, message: resetMsg }, { headers: { Authorization: fonnteToken } });
+      return res.status(200).send('SUCCESS');
+    }
+
+    // 4. Jika sedang dalam mode Live Chat, serahkan balasan ke Admin
+    if (isLiveChat) {
+      return res.status(200).send('LIVE_CHAT_ACTIVE');
+    }
+
+    // 5. Mode Hubungi Admin
+    if (text === 'ADMIN' || text === '4') {
+      if (supabase) {
+        await supabase.from('users').upsert({ phone: sender, is_live_chat: true });
+      }
+
+      const userReply = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\nAnda terhubung dengan *Layanan Petugas Piket Operasional*.\n\nSilakan tuliskan pertanyaan, permohonan, atau kendala Anda. Petugas kami akan membalas pesan Anda secara langsung.\n\n--- \n_Ketik *BOT* kapan saja untuk kembali ke menu otomatis._`;
+      
+      await axios.post('https://api.fonnte.com/send', { target: sender, message: userReply }, { headers: { Authorization: fonnteToken } });
+      return res.status(200).send('SUCCESS');
+    }
+
+    // 6. Logika Menu Utama & Sub-Menu
     let replyMessage = '';
-
-    // HEADER RESMI BMKG
     const header = `BADAN METEOROLOGI, KLIMATOLOGI, DAN GEOFISIKA\nSTASIUN GEOFISIKA KELAS I DELI SERDANG\n========================================\n\n`;
-    const footer = `\n\n========================================\nLayanan Informasi Resmi BMKG Deli Serdang\nWebsite: stageof-deliserdang.bmkg.go.id\nEmail: stageof.deliserdang@bmkg.go.id`;
+    const footer = `\n\n========================================\nWebsite: stageof-deliserdang.bmkg.go.id\nEmail: stageof.deliserdang@bmkg.go.id`;
 
-    // LOGIKA MENU
     if (text === 'MENU' || text === 'HALO' || text === 'HI' || text === 'START') {
       replyMessage = header + 
-        `Selamat datang di Layanan Otomatis Informasi dan Pelayanan Publik Stasiun Geofisika Kelas I Deli Serdang.\n\n` +
-        `Silakan ketik nomor menu yang Anda butuhkan:\n\n` +
-        `1. Informasi Gempabumi Terkini\n` +
-        `2. Pelayanan Data dan Edukasi Publik\n` +
-        `3. Informasi Pengamatan Geofisika\n` +
-        `4. Layanan Pengaduan Masyarakat\n\n` +
-        `Petunjuk: Ketik MENU kapan saja untuk kembali ke daftar menu utama.` + 
-        footer;
+        `Selamat datang di Layanan Informasi Resmi Stasiun Geofisika Kelas I Deli Serdang.\n\n` +
+        `Silakan balas dengan angka pilihan menu:\n\n` +
+        `*1* - Informasi Gempabumi Terkini\n` +
+        `*2* - Pelayanan Data & Edukasi Publik\n` +
+        `*3* - Informasi Pengamatan Geofisika\n` +
+        `*4* - Hubungi Petugas Piket (Live Chat)\n\n` +
+        `_Ketik angka pilihan Anda (contoh: 1)_` + footer;
 
     } else if (text === '1') {
       const bmkgRes = await axios.get('https://data.bmkg.go.id/DataMKG/TEWS/autogempa.json');
       const g = bmkgRes.data.Infogempa.gempa;
       
       replyMessage = header +
-        `INFORMASI GEMPABUMI TERKINI (BMKG)\n\n` +
-        `Waktu Kejadian: ${g.Tanggal} pukul ${g.Jam} WIB\n` +
-        `Magnitudo: ${g.Magnitude}\n` +
-        `Kedalaman: ${g.Kedalaman}\n` +
-        `Koordinat: ${g.Coordinates}\n` +
-        `Lokasi: ${g.Wilayah}\n` +
-        `Potensi Tsunami: ${g.Potensi}\n` +
-        `Dirasakan (MMI): ${g.Dirasakan || 'Tidak dirasakan / Dalam pendataan'}\n\n` +
-        `Peta Goncangan (Shakemap):\nhttps://data.bmkg.go.id/DataMKG/TEWS/${g.Shakemap}` +
-        footer;
+        `*INFORMASI GEMPABUMI TERKINI*\n\n` +
+        `• *Waktu*: ${g.Tanggal} | ${g.Jam} WIB\n` +
+        `• *Magnitudo*: ${g.Magnitude}\n` +
+        `• *Kedalaman*: ${g.Kedalaman}\n` +
+        `• *Lokasi*: ${g.Wilayah}\n` +
+        `• *Potensi Tsunami*: ${g.Potensi}\n` +
+        `• *Goncangan Dirasakan*: ${g.Dirasakan || 'Dalam pendataan'}\n\n` +
+        `Peta Shakemap:\nhttps://data.bmkg.go.id/DataMKG/TEWS/${g.Shakemap}\n\n` +
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
 
     } else if (text === '2') {
       replyMessage = header +
-        `PELAYANAN DATA DAN EDUKASI PUBLIK\n\n` +
-        `Silakan ketik kode menu di bawah ini untuk informasi lebih lanjut:\n\n` +
-        `2A - Permohonan Data Geofisika (Petir / Gempabumi)\n` +
-        `2B - Permohonan Kunjungan Edukasi\n` +
-        `2C - Tarif dan Ketentuan PNBP\n\n` +
-        `Contoh: Ketik 2A lalu kirim.` +
-        footer;
+        `*PELAYANAN DATA DAN EDUKASI PUBLIK*\n\n` +
+        `Silakan ketik kode sub-menu berikut:\n\n` +
+        `*2A* - Permohonan Data Petir & Gempabumi\n` +
+        `*2B* - Pendaftaran Kunjungan Edukasi / Studi\n` +
+        `*2C* - Ketentuan Tarif & PNBP\n\n` +
+        `_Ketik kode pilihan Anda (contoh: 2A)_` + footer;
 
     } else if (text === '2A') {
       replyMessage = header +
-        `PERMOHONAN DATA GEOFISIKA\n\n` +
-        `Persyaratan permohonan data petir atau gempabumi:\n` +
-        `1. Melampirkan Surat Permohonan Resmi ditujukan kepada Kepala Stasiun Geofisika Kelas I Deli Serdang.\n` +
-        `2. Mengisi formulir permohonan data pada Pelayanan Terpadu Satu Pintu (PTSP).\n` +
-        `3. Melampirkan identitas diri (KTP/KTM).\n\n` +
-        `Pelayanan dilaksanakan pada jam kerja operasional (Senin - Jumat, 08.00 - 16.00 WIB).` +
-        footer;
+        `*PERMOHONAN DATA GEOFISIKA*\n\n` +
+        `Persyaratan Permohonan Data:\n` +
+        `1. Surat Permohonan Resmi ditujukan kepada Kepala Stasiun Geofisika Kelas I Deli Serdang.\n` +
+        `2. Mengisi Formulir Layanan PTSP.\n` +
+        `3. Melampirkan Salinan Identitas (KTP/KTM).\n\n` +
+        `*Jam Layanan*: Senin - Jumat (08.00 - 16.00 WIB)\n\n` +
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
 
     } else if (text === '2B') {
       replyMessage = header +
-        `PERMOHONAN KUNJUNGAN EDUKASI\n\n` +
-        `Ketentuan permohonan kunjungan studi/lapangan:\n` +
-        `1. Mengirimkan Surat Permohonan Kunjungan resmi dari Sekolah/Perguruan Tinggi minimal 7 hari kerja sebelum pelaksanaan.\n` +
-        `2. Mencantumkan estimasi jumlah peserta dan dosen/guru pendamping.\n\n` +
-        `Surat permohonan dikirimkan melalui email resmi: stageof.deliserdang@bmkg.go.id` +
-        footer;
+        `*PERMOHONAN KUNJUNGAN EDUKASI*\n\n` +
+        `Ketentuan Kunjungan Lapangan / Studi:\n` +
+        `1. Mengirimkan Surat Permohonan resmi dari Sekolah/Perguruan Tinggi (Minimal H-7).\n` +
+        `2. Mencantumkan jumlah peserta dan pendamping.\n\n` +
+        `Surat dapat dikirim via email ke:\n*stageof.deliserdang@bmkg.go.id*\n\n` +
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
 
     } else if (text === '2C') {
       replyMessage = header +
-        `TARIF DAN KETENTUAN PNBP\n\n` +
-        `Tarif Pelayanan Jasa Meteorologi, Klimatologi, dan Geofisika diatur berdasarkan Peraturan Pemerintah Republik Indonesia Nomor 47 Tahun 2018 tentang Jenis dan Tarif atas Jenis Penerimaan Negara Bukan Pajak (PNBP) yang Berlaku pada BMKG.\n\n` +
-        `Permohonan data untuk kegiatan keagamaan, bencana alam, dan tugas akhir pendidikan dapat dikenakan tarif Rp0 (nol rupiah) sesuai ketentuan syarat yang berlaku.` +
-        footer;
+        `*KETENTUAN TARIF DAN PNBP*\n\n` +
+        `• Sesuai PP No. 47 Tahun 2018 tentang Tarif PNBP BMKG.\n` +
+        `• Permohonan data untuk kegiatan pendidikan, penanggulangan bencana, dan keagamaan dapat dikenakan *Tarif Rp0 (Nol Rupiah)* sesuai syarat berlaku.\n\n` +
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
 
     } else if (text === '3') {
       replyMessage = header +
-        `INFORMASI PENGAMATAN GEOFISIKA\n\n` +
-        `Stasiun Geofisika Kelas I Deli Serdang mengoperasikan sarana pengamatan geofisika meliputi:\n` +
-        `1. Pengamatan Seismisitas (Gempabumi)\n` +
-        `2. Pengamatan Petir (Lightning Detector)\n` +
+        `*INFORMASI PENGAMATAN GEOFISIKA*\n\n` +
+        `Fasilitas Pengamatan Operasional:\n` +
+        `1. Pengamatan Gempabumi (Seismograph)\n` +
+        `2. Pengamatan Sambaran Petir (Lightning Detector)\n` +
         `3. Pengamatan Magnet Bumi (Magnetometer)\n` +
-        `4. Pengamatan Tanda Waktu dan Hilal\n\n` +
-        `Informasi publikasi berkala dapat diakses melalui kanal resmi BMKG.` +
-        footer;
-
-    } else if (text === '4') {
-      replyMessage = header +
-        `LAYANAN PENGADUAN MASYARAKAT\n\n` +
-        `Sampaikan permohonan informasi atau pengaduan Anda melalui obrolan ini dengan format:\n\n` +
-        `NAMA#LOKASI#ISI_PESAN\n\n` +
-        `Contoh:\n` +
-        `Budi#Deli Serdang#Mohon konfirmasi mengenai informasi gempabumi lokal terkini.\n\n` +
-        `Petugas kami akan menindaklanjuti pesan Anda pada jam operasional kerja.` +
-        footer;
+        `4. Pengamatan Hilal & Tanda Waktu\n\n` +
+        `_Ketik *MENU* untuk kembali ke menu utama._` + footer;
 
     } else {
       replyMessage = header +
-        `Pesan tidak dapat diproses.\n\n` +
-        `Silakan ketik MENU untuk menampilkan pilihan layanan resmi Stasiun Geofisika Kelas I Deli Serdang.` +
-        footer;
+        `Pesan tidak dikenali.\n\n` +
+        `Silakan ketik *MENU* untuk melihat pilihan layanan atau ketik *ADMIN* untuk terhubung dengan petugas piket.` + footer;
     }
 
-    // Kirim balasan via Fonnte
-    const fonnteToken = process.env.FONNTE_TOKEN || 'tQTBfHSeQoXKNwKSejPJ';
-    await axios.post(
-      'https://api.fonnte.com/send',
-      {
-        target: sender,
-        message: replyMessage
-      },
-      {
-        headers: {
-          Authorization: fonnteToken
-        }
-      }
-    );
+    // Kirim Balasan Bot
+    await axios.post('https://api.fonnte.com/send', { target: sender, message: replyMessage }, { headers: { Authorization: fonnteToken } });
 
-    // Log pesan keluar
     if (supabase) {
       await supabase.from('chat_logs').insert([
         { phone: sender, message: replyMessage, direction: 'outgoing' }
